@@ -262,8 +262,8 @@ def send_diagnostic_to_plc1(diagnostic_code):
 
 
 def send_diagnostic_to_plc2(diagnostic_code):
-    write_bool(PLC2, PLC2_FLAGS_ADDR, INSPECTION_DONE_BIT, True)
     write_int(PLC2, DIAGNOSTIC_ADDR_2, diagnostic_code)
+    write_bool(PLC2, PLC2_FLAGS_ADDR, INSPECTION_DONE_BIT, True)
     
     if diagnostic_code == DIAG_OK:
         print("Diagnostic sent to PLC2: OK")
@@ -737,7 +737,7 @@ while True:
     # --------------------------------------------------------
     # 23. Mandar diagnóstico final a los PLCs
     # --------------------------------------------------------
-    elif state == "SEND_DIAGNOSTIC_TO_PLCs":
+    elif state == "SEND_DIAGNOSTIC_TO_PLC1":
 
         send_diagnostic_to_plc1(diagnostic)
         send_diagnostic_to_plc2(diagnostic)
