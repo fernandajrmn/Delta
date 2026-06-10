@@ -26,15 +26,14 @@ ROBOT_READY_TO_START = 7
 # Multivista ahora dentro de PLC1
 MULTI_FLAGS_ADDR = 370
 
-FLIP_REQUEST_BIT = 0
+FLIP_REQUEST_BIT = 5
 FLIP_DONE_BIT = 1
 ROTATE_DONE_BIT = 2
-ROTATE_REQUEST_BIT = 3
+ROTATE_REQUEST_BIT = 6
 MOVE_BUSY_BIT = 4
 INSPECTION_DONE_BIT = 5
 
 ROTATE_DEGREES_ADDR = 372
-DIAGNOSTIC_ADDR_MULTI = 374
 
 DIAG_OK = 1
 DIAG_NOT_OK = 2
@@ -94,26 +93,58 @@ def safe_float(value, default=0.0):
     except:
         return default
 
+#-------------------------ESTA SI JALA----------------------
+# def read_cognex():
+#     data = camera.recv(128).decode(errors="ignore").strip()
+#     values = data.split(",")
+
+#     while len(values) < 7:
+#         values.append("0")
+
+#     return {
+#         "label": values[0].strip().upper(),
+#         "x": safe_float(values[1]),
+#         "y": safe_float(values[2]),
+#         "blob_status": values[3].strip().upper(),
+#         "logo_status": values[4].strip().upper(),
+#         "ocr_text": values[5].strip().upper(),
+#         "mean_color": safe_float(values[6]),
+#     }
+
 
 def read_cognex():
-    data = camera.recv(128).decode(errors="ignore").strip()
+    data = ""
+
+    while True:
+        c = camera.recv(1).decode(errors="ignore")
+        if c == "<":
+            break
+
+    while True:
+        c = camera.recv(1).decode(errors="ignore")
+        if c == ">":
+            break
+        data += c
+
     print("RAW:", repr(data))
 
-    values = data.split(",")
+    values = data.split("|")
 
     if len(values) != 7:
-        print("Bad Cognex packet")
         return None
 
     return {
-        "label": values[0].strip().upper(),
+        "label": values[0].strip(),
         "x": safe_float(values[1]),
         "y": safe_float(values[2]),
-        "blob_status": values[3].strip().upper(),
-        "logo_status": values[4].strip().upper(),
-        "ocr_text": values[5].strip().upper(),
+        "blob_status": values[3].strip(),
+        "logo_status": values[4].strip(),
+        "ocr_text": values[5].strip(),
         "mean_color": safe_float(values[6]),
     }
+
+
+
 
 
 def detect_color(mean_color):
@@ -146,24 +177,28 @@ def clear_coordinate_request_to_plc1():
     print("Coordinate request cleared")
 
 
+# def request_multivista_flip():
+#     write_bool(PLC1, MULTI_FLAGS_ADDR, FLIP_REQUEST_BIT, True)
+#     print("Requested multivista flip")
+    
 def request_multivista_flip():
-    write_bool(PLC1, MULTI_FLAGS_ADDR, FLIP_REQUEST_BIT, True)
+    write_bool(PLC1, 450, FLIP_REQUEST_BIT, True)
     print("Requested multivista flip")
 
 
 def clear_multivista_flip_request():
-    write_bool(PLC1, MULTI_FLAGS_ADDR, FLIP_REQUEST_BIT, False)
+    write_bool(PLC1, 450, FLIP_REQUEST_BIT, False)
     print("Multivista flip request cleared")
 
 
 def request_multivista_rotation(degrees):
-    write_int(PLC1, ROTATE_DEGREES_ADDR, degrees)
-    write_bool(PLC1, MULTI_FLAGS_ADDR, ROTATE_REQUEST_BIT, True)
+    write_int(PLC1, 800, degrees)
+    write_bool(PLC1, 470, ROTATE_REQUEST_BIT, True)
     print("Requested multivista rotation:", degrees, "degrees")
 
 
 def clear_multivista_rotation_request():
-    write_bool(PLC1, MULTI_FLAGS_ADDR, ROTATE_REQUEST_BIT, False)
+    write_bool(PLC1, 470, ROTATE_REQUEST_BIT, False)
     print("Multivista rotation request cleared")
 
 
@@ -173,10 +208,6 @@ def send_diagnostic_to_plc1(diagnostic_code):
     print("Diagnostic sent to PLC1:", diagnostic_code)
 
 
-def send_diagnostic_to_multivista(diagnostic_code):
-    write_int(PLC1, DIAGNOSTIC_ADDR_MULTI, diagnostic_code)
-    write_bool(PLC1, MULTI_FLAGS_ADDR, INSPECTION_DONE_BIT, True)
-    print("Diagnostic sent to multivista:", diagnostic_code)
 
 
 def clear_diagnostic_to_plc1():
@@ -211,7 +242,7 @@ printed_not_ready = False
 
 
 while True:
-
+    result = read_cognex()
     Start = read_bool(PLC1, 219, ROBOT_READY_TO_START)
 
     if state == "WAIT_FOR_DELTA":
@@ -236,9 +267,9 @@ while True:
             result = read_cognex()
             print(result)
 
-            if result is None:
-                sleep(0.05)
-                continue
+            # if result is None:
+            #     sleep(0.05)
+            #     continue
 
             if result["label"] == "1":
                 x = result["x"]
@@ -266,7 +297,7 @@ while True:
 
         coord_received = read_bool(PLC1, PLC1_FLAGS_ADDR, COORD_DATA_RECEIVED_BIT)
 
-        if not coord_received:
+        if coord_received:
             print("Coordinate handshake finished")
             print("Robot moving to position.")
             state = "WAIT_MULTIVISTA_READY"
@@ -292,9 +323,9 @@ while True:
         result = read_cognex()
         print(result)
 
-        if result is None:
-            sleep(0.05)
-            continue
+        # if result is None:
+        #     sleep(0.05)
+        #     continue
 
         blob_status = result["blob_status"]
 
@@ -329,7 +360,7 @@ while True:
 
         if not flip_done:
             print("Flip handshake finished")
-            sleep(3)
+            sleep(2)
             state = "SEARCH_LOGO"
 
     elif state == "SEARCH_LOGO":
@@ -337,9 +368,9 @@ while True:
         result = read_cognex()
         print(result)
 
-        if result is None:
-            sleep(0.05)
-            continue
+        # if result is None:
+        #     sleep(0.05)
+        #     continue
 
         logo_status = result["logo_status"]
 
@@ -375,7 +406,7 @@ while True:
 
         if not rotate_done:
             print("Logo search step handshake finished")
-            sleep(4)
+            sleep(2)
             state = "SEARCH_LOGO"
 
     elif state == "WAIT_ROTATE_TO_OCR_DONE":
@@ -393,7 +424,7 @@ while True:
 
         if not rotate_done:
             print("Rotation to OCR handshake finished")
-            sleep(4)
+            sleep(2)
             state = "READ_OCR"
 
     elif state == "READ_OCR":
@@ -401,9 +432,9 @@ while True:
         result = read_cognex()
         print(result)
 
-        if result is None:
-            sleep(0.05)
-            continue
+        # if result is None:
+        #     sleep(0.05)
+        #     continue
 
         ocr_text = result["ocr_text"]
 
@@ -449,7 +480,7 @@ while True:
 
         if not rotate_done:
             print("OCR correction handshake finished")
-            sleep(4)
+            sleep(2)
             state = "READ_OCR"
 
     elif state == "WAIT_ROTATE_TO_COLOR_DONE":
@@ -467,7 +498,7 @@ while True:
 
         if not rotate_done:
             print("Rotation to color handshake finished")
-            sleep(4)
+            sleep(2)
             state = "READ_COLOR"
 
     elif state == "READ_COLOR":
@@ -475,9 +506,9 @@ while True:
         result = read_cognex()
         print(result)
 
-        if result is None:
-            sleep(0.05)
-            continue
+        # if result is None:
+        #     sleep(0.05)
+        #     continue
 
         mean_color = result["mean_color"]
 
@@ -526,7 +557,6 @@ while True:
     elif state == "SEND_DIAGNOSTIC_TO_PLC1":
 
         send_diagnostic_to_plc1(diagnostic)
-        send_diagnostic_to_multivista(diagnostic)
         state = "WAIT_PLC1_DIAGNOSTIC_RECEIVED"
 
     elif state == "WAIT_PLC1_DIAGNOSTIC_RECEIVED":
