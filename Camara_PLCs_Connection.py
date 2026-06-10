@@ -78,13 +78,15 @@ ROTATE_BIG = 120
 FULL_ROTATION_STEPS = 36
 # 36 * 10° = 360°. Solo imprime advertencia, no manda RETRY.
 
-MAX_OCR_READ_ATTEMPTS = 5
+MAX_OCR_READ_ATTEMPTS = 10
 # Si llega al OCR pero no lee YELLOW/BROWN, hace ajustes pequeños.
 
 COLOR_THRESHOLD = 70
+COINTANER_THRESHOLD = 20
 # Calibrar con pruebas reales.
 # mean_color > 50  → YELLOW
 # mean_color <= 50 → BROWN
+
 
 
 # ============================================================
@@ -168,8 +170,9 @@ def safe_float(value, default=0.0):
 # ============================================================
 
 def read_cognex():
-    data = camera.recv(32).decode(errors="ignore").strip()
-
+    data = camera.recv(128).decode(errors="ignore").strip()
+    
+    
     # if data == "":
     #     return None
 
@@ -190,6 +193,7 @@ def read_cognex():
         "mean_color": safe_float(values[6]),
     }
 
+
 # ============================================================
 # LOGIC FUNCTIONS
 # ============================================================
@@ -197,6 +201,8 @@ def read_cognex():
 def detect_color(mean_color):
     if mean_color > COLOR_THRESHOLD:
         return "Y"
+    elif mean_color < COINTANER_THRESHOLD:
+        return "N"
     else:
         return "B"
 
@@ -303,6 +309,7 @@ diagnostic = None
 
 logo_search_count = 0
 ocr_retry_count = 0
+counter_degrees = 0
 
 
 state = "WAIT_FOR_DELTA"
@@ -316,7 +323,8 @@ printed_not_ready = False
 
 while True:
     
-    result = read_cognex()
+    #result = read_cognex()
+    #print(result)
     
     # --------------------------------------------------------
     # 0. Esperar a que el delta este listo.
@@ -351,7 +359,7 @@ while True:
         )
 
         if not robot_busy and not coord_received:
-            #result = read_cognex()
+            result = read_cognex()
             print(result)
 
             if result is None:
@@ -367,6 +375,8 @@ while True:
                 
 
             else:
+                x = 0.0
+                y = 0.0
                 print("NoVacuna detected. Waiting...")
                 state = "WAIT_CUP"
 
@@ -433,6 +443,7 @@ while True:
             diagnostic = None
             logo_search_count = 0
             ocr_retry_count = 0
+            counter_degrees = 0
 
             state = "READ_TOP_CAMERA"
 
@@ -442,7 +453,7 @@ while True:
     # --------------------------------------------------------
     elif state == "READ_TOP_CAMERA":
 
-        #result = read_cognex()
+        result = read_cognex()
         print(result)
 
         if result is None:
@@ -504,7 +515,7 @@ while True:
     # --------------------------------------------------------
     elif state == "SEARCH_LOGO":
 
-        #result = read_cognex()
+        result = read_cognex()
         print(result)
 
         if result is None:
@@ -521,6 +532,7 @@ while True:
 
             logo_search_count = 0
             request_multivista_rotation(ROTATE_BIG)
+            counter_degrees += ROTATE_BIG
 
             state = "WAIT_ROTATE_TO_OCR_DONE"
 
@@ -531,6 +543,7 @@ while True:
             print_full_rotation_warning(logo_search_count, "LOGO")
 
             request_multivista_rotation(ROTATE_SMALL)
+            counter_degrees += ROTATE_SMALL
 
             state = "WAIT_LOGO_SEARCH_STEP_DONE"
 
@@ -593,7 +606,7 @@ while True:
     # --------------------------------------------------------
     elif state == "READ_OCR":
 
-        #result = read_cognex()
+        result = read_cognex()
         print(result)
 
         if result is None:
@@ -621,6 +634,7 @@ while True:
 
             ocr_retry_count = 0
             request_multivista_rotation(ROTATE_BIG)
+            counter_degrees += ROTATE_BIG
 
             state = "WAIT_ROTATE_TO_COLOR_DONE"
 
@@ -638,6 +652,7 @@ while True:
 
             else:
                 request_multivista_rotation(ROTATE_SMALL)
+                counter_degrees += ROTATE_SMALL
                 state = "WAIT_OCR_CORRECTION_DONE"
 
 
@@ -698,7 +713,7 @@ while True:
     # --------------------------------------------------------
     elif state == "READ_COLOR":
 
-        #result = read_cognex()
+        result = read_cognex()
         print(result)
 
         if result is None:
@@ -724,23 +739,52 @@ while True:
         print("OCR saved color:", ocr_color)
 
         if physical_color == ocr_color:
-            print("Vaccine condition: OK")
-            diagnostic = DIAG_OK
-            state = "SEND_DIAGNOSTIC_TO_PLC1"
-
+                print("Vaccine condition: OK")
+                diagnostic = DIAG_OK
         else:
             print("Vaccine condition: RETRY")
             diagnostic = DIAG_RETRY
+
+        if counter_degrees != 0:
+            request_multivista_rotation(-counter_degrees)
+            state = "WAIT_RETURN_ROTATION_DONE"
+        else:
             state = "SEND_DIAGNOSTIC_TO_PLC1"
+            
+    # --------------------------------------------------------
+    # 22.1 Esperar a que rote a posicion inicial
+    # --------------------------------------------------------
+            
+    elif state == "WAIT_RETURN_ROTATION_DONE":
+
+        rotate_done = read_bool(PLC2, PLC2_FLAGS_ADDR, ROTATE_DONE_BIT)
+
+        if rotate_done:
+            clear_multivista_rotation_request()
+            state = "WAIT_RETURN_ROTATION_RESET"
+            
+    
+    # --------------------------------------------------------
+    # 22.2 Esperar que se limpie la bandera de rotation done
+    # --------------------------------------------------------
 
 
+    elif state == "WAIT_RETURN_ROTATION_RESET":
+
+        rotate_done = read_bool(PLC2, PLC2_FLAGS_ADDR, ROTATE_DONE_BIT)
+
+        if not rotate_done:
+            print("Returned multivista to start angle")
+            counter_degrees = 0
+            state = "SEND_DIAGNOSTIC_TO_PLC1"
+            
+            
     # --------------------------------------------------------
     # 23. Mandar diagnóstico final a los PLCs
     # --------------------------------------------------------
     elif state == "SEND_DIAGNOSTIC_TO_PLC1":
 
         send_diagnostic_to_plc1(diagnostic)
-        send_diagnostic_to_plc2(diagnostic)
         state = "WAIT_PLC1_DIAGNOSTIC_RECEIVED"
 
 
@@ -790,7 +834,9 @@ while True:
         )
 
         if not multivista_ready:
+            counter_degrees = 0
             print("Cycle finished. Waiting for next cup.")
+            
             state = "WAIT_FOR_DELTA"
 
 
