@@ -44,7 +44,7 @@ ROTATE_BIG = 120
 FULL_ROTATION_STEPS = 36
 MAX_OCR_READ_ATTEMPTS = 10
 
-COLOR_THRESHOLD = 70
+COLOR_THRESHOLD = 80
 COINTANER_THRESHOLD = 20
 
 camera = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -264,6 +264,7 @@ while True:
         coord_received = read_bool(PLC1, PLC1_FLAGS_ADDR, COORD_DATA_RECEIVED_BIT)
 
         if not robot_busy and not coord_received:
+            sleep(0.5)
             result = read_cognex()
             print(result)
 
@@ -272,9 +273,10 @@ while True:
             #     continue
 
             if result["label"] == "1":
+                print("Vacuna detected")
                 x = result["x"]
                 y = result["y"]
-                print("Vacuna detected")
+                #print("Vacuna detected")
                 state = "SEND_COORDS_TO_PLC1"
             else:
                 x = 0.0
