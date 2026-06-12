@@ -57,6 +57,7 @@ def read_cognex():
         "logo_status": values[4].strip(),
         "ocr_text": values[5].strip(),
         "mean_color": safe_float(values[6]),
+        "missing" : values[7].strip()
     }
 
 while True:
