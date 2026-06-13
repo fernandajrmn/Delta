@@ -52,7 +52,7 @@ ROTATE_BIG = 120
 FULL_ROTATION_STEPS = 36
 MAX_OCR_READ_ATTEMPTS = 10
 
-COLOR_THRESHOLD = 80
+COLOR_THRESHOLD = 70
 COINTANER_THRESHOLD = 20
 
 
@@ -308,7 +308,7 @@ while True:
         coord_received = read_bool(PLC1, PLC1_FLAGS_ADDR, COORD_DATA_RECEIVED_BIT)
 
         if not robot_busy and not coord_received:
-            sleep(0.5)
+            sleep(1)
             result = read_cognex()
             print(result)
 
@@ -318,6 +318,7 @@ while True:
 
             if result["label"] == "1":
                 print("Vacuna detected")
+                #result = read_cognex()
                 x = result["x"]
                 y = result["y"]
                 #print("Vacuna detected")
